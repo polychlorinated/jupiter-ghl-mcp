@@ -5,7 +5,7 @@
 
 import express from 'express';
 import cors from 'cors';
-import { Server } from '@modelcontextprotocol/sdk';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { 
   CallToolRequestSchema,
@@ -111,9 +111,6 @@ class GHLMCPHttpServer {
     // Setup MCP handlers
     this.setupMCPHandlers();
     this.setupRoutes();
-
-// Mount MCP tools endpoint
-this.app.use('/', this.server.createExpressRouter());
   }
 
   /**
@@ -229,7 +226,7 @@ this.app.use('/', this.server.createExpressRouter());
     });
 
     // Handle tool execution requests
-    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    this.server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
       const { name, arguments: args } = request.params;
       
       console.log(`[GHL MCP HTTP] Executing tool: ${name}`);
