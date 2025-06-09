@@ -353,8 +353,11 @@ class GHLMCPHttpServer {
     });
 
     // SSE endpoint for ChatGPT MCP connection
-    const handleSSE = async (req: express.Request, res: express.Response) => {
-      const sessionId = req.query.sessionId || 'unknown';
+    const handleSSE = async (
+      req: express.Request,
+      res: express.Response
+    ): Promise<void> => {                            //  <<< explicit Promise<void>
+      const sessionId = (req.query.sessionId as string) || 'unknown';
       console.log(`[GHL MCP HTTP] New SSE connection from: ${req.ip}, sessionId: ${sessionId}, method: ${req.method}`);
       
       try {
@@ -388,6 +391,58 @@ class GHLMCPHttpServer {
     this.app.get('/sse', handleSSE);
     this.app.post('/sse', handleSSE);
 
+   // ──────────────────────────────────────────────────────────────
+//  /mcp  –  Direct HTTP endpoint for Model-Context-Protocol
+// ──────────────────────────────────────────────────────────────
+this.app.post(
+  '/mcp',
+  async (
+    req: express.Request,
+    res: express.Response
+  ): Promise<void> => {
+    console.log('[GHL MCP HTTP] Received MCP request:', req.body);
+
+    /* ---------------------------------------------------------
+       Basic validation
+    ----------------------------------------------------------*/
+    if (!req.body || typeof req.body !== 'object') {
+      res.status(400).json({ error: 'Invalid request body' });
+      return;
+    }
+
+    try {
+      /* -------------------------------------------------------
+         Forward the request to the MCP server.
+         The SDK’s *.d.ts* currently does not expose
+         `handleRequest`, but the method exists at runtime,
+         so we cast once to `any` to satisfy the compiler.
+         (If your SDK version has   .request()   instead,
+          replace the following line with that call and
+          remove the cast.)
+      --------------------------------------------------------*/
+      const mcpResponse = await (this.server as any).handleRequest(req.body);
+
+      console.log('[GHL MCP HTTP] MCP request processed successfully');
+      res.json(mcpResponse);        // <-- finishes the response (no return)
+    } catch (err) {
+      console.error('[GHL MCP HTTP] Error processing MCP request:', err);
+
+      if (err instanceof McpError) {
+        res.status(400).json({
+          error: { code: err.code, message: err.message }
+        });
+      } else {
+        res.status(500).json({
+          error: {
+            code: ErrorCode.InternalError,
+            message: 'Internal server error'
+          }
+        });
+      }
+    }
+  }
+);
+
     // Root endpoint with server info
     this.app.get('/', (req, res) => {
       res.json({
@@ -398,7 +453,8 @@ class GHLMCPHttpServer {
           health: '/health',
           capabilities: '/capabilities',
           tools: '/tools',
-          sse: '/sse'
+          sse: '/sse',
+          mcp: '/mcp'
         },
         tools: this.getToolsCount(),
         documentation: 'https://github.com/your-repo/ghl-mcp-server'
@@ -697,6 +753,7 @@ class GHLMCPHttpServer {
         console.log('✅ GoHighLevel MCP HTTP Server started successfully!');
         console.log(`🌐 Server running on: http://0.0.0.0:${this.port}`);
         console.log(`🔗 SSE Endpoint: http://0.0.0.0:${this.port}/sse`);
+        console.log(`📋 MCP Endpoint: http://0.0.0.0:${this.port}/mcp`);
         console.log(`📋 Tools Available: ${this.getToolsCount().total}`);
         console.log('🎯 Ready for ChatGPT integration!');
         console.log('=========================================');
@@ -744,4 +801,4 @@ async function main(): Promise<void> {
 main().catch((error) => {
   console.error('Unhandled error:', error);
   process.exit(1);
-}); 
+});
