@@ -79,7 +79,9 @@ class GHLMCPHttpServer {
       },
       {
         capabilities: {
-          tools: {},
+          tools: {
+            send_sms: async (args: any) => this.conversationTools.executeTool('send_sms', args),
+          },
         },
       }
     );
