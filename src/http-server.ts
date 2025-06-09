@@ -391,9 +391,9 @@ class GHLMCPHttpServer {
     this.app.get('/sse', handleSSE);
     this.app.post('/sse', handleSSE);
 
-   // ──────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────
 //  /mcp  –  Direct HTTP endpoint for Model-Context-Protocol
-// ──────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────
 this.app.post(
   '/mcp',
   async (
@@ -402,43 +402,118 @@ this.app.post(
   ): Promise<void> => {
     console.log('[GHL MCP HTTP] Received MCP request:', req.body);
 
-    /* ---------------------------------------------------------
-       Basic validation
-    ----------------------------------------------------------*/
+    // 1. Basic validation ------------------------------------------------------
     if (!req.body || typeof req.body !== 'object') {
-      res.status(400).json({ error: 'Invalid request body' });
+      res.status(400).json({
+        error: { code: ErrorCode.InvalidRequest, message: 'Invalid JSON body' }
+      });
       return;
     }
 
+    const { method, params = {} } = req.body as Record<string, any>;
+
     try {
-      /* -------------------------------------------------------
-         Forward the request to the MCP server.
-         The SDK’s *.d.ts* currently does not expose
-         `handleRequest`, but the method exists at runtime,
-         so we cast once to `any` to satisfy the compiler.
-         (If your SDK version has   .request()   instead,
-          replace the following line with that call and
-          remove the cast.)
-      --------------------------------------------------------*/
-      const mcpResponse = await (this.server as any).handleRequest(req.body);
+      // 2. Handle "list_tools" -------------------------------------------------
+      if (method === 'list_tools') {
+        const tools = [
+          ...this.contactTools.getToolDefinitions(),
+          ...this.conversationTools.getToolDefinitions(),
+          ...this.blogTools.getToolDefinitions(),
+          ...this.opportunityTools.getToolDefinitions(),
+          ...this.calendarTools.getToolDefinitions(),
+          ...this.emailTools.getToolDefinitions(),
+          ...this.locationTools.getToolDefinitions(),
+          ...this.emailISVTools.getToolDefinitions(),
+          ...this.socialMediaTools.getTools(),
+          ...this.mediaTools.getToolDefinitions(),
+          ...this.objectTools.getToolDefinitions(),
+          ...this.associationTools.getTools(),
+          ...this.customFieldV2Tools.getTools(),
+          ...this.workflowTools.getTools(),
+          ...this.surveyTools.getTools(),
+          ...this.storeTools.getTools(),
+          ...this.productsTools.getTools()
+        ];
 
-      console.log('[GHL MCP HTTP] MCP request processed successfully');
-      res.json(mcpResponse);        // <-- finishes the response (no return)
-    } catch (err) {
-      console.error('[GHL MCP HTTP] Error processing MCP request:', err);
-
-      if (err instanceof McpError) {
-        res.status(400).json({
-          error: { code: err.code, message: err.message }
-        });
-      } else {
-        res.status(500).json({
-          error: {
-            code: ErrorCode.InternalError,
-            message: 'Internal server error'
-          }
-        });
+        res.json({ tools });
+        return;
       }
+
+      // 3. Handle "call_tool" --------------------------------------------------
+      if (method === 'call_tool') {
+        const { name, arguments: args = {} } = params as {
+          name: string;
+          arguments?: Record<string, unknown>;
+        };
+
+        if (!name) {
+          res.status(400).json({
+            error: {
+              code: ErrorCode.InvalidRequest,
+              message: '"name" is required in params'
+            }
+          });
+          return;
+        }
+
+        let result: unknown;
+
+        if (this.isContactTool(name))
+          result = await this.contactTools.executeTool(name, args);
+        else if (this.isConversationTool(name))
+          result = await this.conversationTools.executeTool(name, args);
+        else if (this.isBlogTool(name))
+          result = await this.blogTools.executeTool(name, args);
+        else if (this.isOpportunityTool(name))
+          result = await this.opportunityTools.executeTool(name, args);
+        else if (this.isCalendarTool(name))
+          result = await this.calendarTools.executeTool(name, args);
+        else if (this.isEmailTool(name))
+          result = await this.emailTools.executeTool(name, args);
+        else if (this.isLocationTool(name))
+          result = await this.locationTools.executeTool(name, args);
+        else if (this.isEmailISVTool(name))
+          result = await this.emailISVTools.executeTool(name, args);
+        else if (this.isSocialMediaTool(name))
+          result = await this.socialMediaTools.executeTool(name, args);
+        else if (this.isMediaTool(name))
+          result = await this.mediaTools.executeTool(name, args);
+        else if (this.isObjectTool(name))
+          result = await this.objectTools.executeTool(name, args);
+        else if (this.isAssociationTool(name))
+          result = await this.associationTools.executeAssociationTool(name, args);
+        else if (this.isCustomFieldV2Tool(name))
+          result = await this.customFieldV2Tools.executeCustomFieldV2Tool(name, args);
+        else if (this.isWorkflowTool(name))
+          result = await this.workflowTools.executeWorkflowTool(name, args);
+        else if (this.isSurveyTool(name))
+          result = await this.surveyTools.executeSurveyTool(name, args);
+        else if (this.isStoreTool(name))
+          result = await this.storeTools.executeStoreTool(name, args);
+        else if (this.isProductsTool(name))
+          result = await this.productsTools.executeProductsTool(name, args);
+        else {
+          res.status(400).json({
+            error: { code: ErrorCode.InvalidRequest, message: `Unknown tool: ${name}` }
+          });
+          return;
+        }
+
+        res.json({
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
+        });
+        return;
+      }
+
+      // 4. Unknown method ------------------------------------------------------
+      res.status(400).json({
+        error: { code: ErrorCode.InvalidRequest, message: `Unknown method: ${method}` }
+      });
+    } catch (err) {
+      console.error('[GHL MCP HTTP] /mcp unhandled error:', err);
+      res.status(500).json({
+        error: { code: ErrorCode.InternalError, message: 'Internal server error' }
+      });
     }
   }
 );
