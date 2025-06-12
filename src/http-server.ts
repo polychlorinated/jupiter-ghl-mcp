@@ -398,6 +398,7 @@ this.app.post(
     res: express.Response
   ): Promise<void> => {
     console.log('[GHL MCP HTTP] Received MCP request:', req.body);
+    console.log('[MCP DEBUG] /mcp route hit');
 
     // 1. Basic validation ------------------------------------------------------
     if (!req.body || typeof req.body !== 'object') {
