@@ -352,7 +352,7 @@ class GHLMCPHttpServer {
       }
     });
 
-   // SSE endpoint for ChatGPT MCP connection (manual version)
+ // SSE endpoint for ChatGPT MCP connection (manual version)
 const handleSSE = async (
   req: express.Request,
   res: express.Response
@@ -364,35 +364,21 @@ const handleSSE = async (
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
+  res.setHeader('Access-Control-Allow-Origin', '*'); // optional: allow CORS if needed
   res.flushHeaders?.(); // flush headers immediately
 
-  // Send an initial handshake message
+  // Send an initial message to confirm the connection
   res.write(`data: ${JSON.stringify({ type: 'status', content: 'MCP server connected.' })}\n\n`);
-
-  // Optional: Connect your backend logic here if needed
-  if (this.server?.connect) {
-    try {
-      await this.server.connect({
-        send: (message: string) => {
-          res.write(`data: ${message}\n\n`);
-        },
-      });
-      console.log(`[GHL MCP HTTP] Connected MCP backend for session: ${sessionId}`);
-    } catch (err) {
-      console.error(`[GHL MCP HTTP] Backend connection error for session ${sessionId}:`, err);
-    }
-  }
 
   // Keep the connection alive with a comment ping every 15 seconds
   const keepAlive = setInterval(() => {
-    res.write(`:\n\n`);
+    res.write(`: keep-alive\n\n`);
   }, 15000);
 
-  // Clean up when client disconnects
+  // Handle disconnect
   req.on('close', () => {
     clearInterval(keepAlive);
     console.log(`[GHL MCP HTTP] SSE connection closed for session: ${sessionId}`);
-    res.end();
   });
 };
 
