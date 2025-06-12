@@ -65,7 +65,7 @@ class GHLMCPHttpServer {
   private port: number;
 
   constructor() {
-    this.port = parseInt(process.env.PORT || process.env.MCP_SERVER_PORT || '8000');
+    this.port = parseInt(process.env.PORT || process.env.MCP_SERVER_PORT || '8080');
     
     // Initialize Express app
     this.app = express();
