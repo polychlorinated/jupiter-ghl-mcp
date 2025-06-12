@@ -402,12 +402,14 @@ this.app.post(
     // 1. Basic validation ------------------------------------------------------
     if (!req.body || typeof req.body !== 'object') {
       res.status(400).json({
+        jsonrpc: '2.0',
+        id: req.body?.id || null,
         error: { code: ErrorCode.InvalidRequest, message: 'Invalid JSON body' }
       });
       return;
     }
 
-    const { method, params = {} } = req.body as Record<string, any>;
+    const { method, params = {}, id } = req.body as Record<string, any>;
 
     try {
       // 2. Handle "list_tools" -------------------------------------------------
@@ -432,7 +434,11 @@ this.app.post(
           ...this.productsTools.getTools()
         ];
 
-        res.json({ tools });
+        res.json({
+          jsonrpc: '2.0',
+          id: id,
+          result: { tools }
+        });
         return;
       }
 
@@ -444,7 +450,9 @@ this.app.post(
         };
 
         if (!name) {
-          res.status(400).json({
+          res.json({
+            jsonrpc: '2.0',
+            id: id,
             error: {
               code: ErrorCode.InvalidRequest,
               message: '"name" is required in params'
@@ -490,25 +498,35 @@ this.app.post(
         else if (this.isProductsTool(name))
           result = await this.productsTools.executeProductsTool(name, args);
         else {
-          res.status(400).json({
+          res.json({
+            jsonrpc: '2.0',
+            id: id,
             error: { code: ErrorCode.InvalidRequest, message: `Unknown tool: ${name}` }
           });
           return;
         }
 
         res.json({
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
+          jsonrpc: '2.0',
+          id: id,
+          result: {
+            content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
+          }
         });
         return;
       }
 
       // 4. Unknown method ------------------------------------------------------
-      res.status(400).json({
+      res.json({
+        jsonrpc: '2.0',
+        id: id,
         error: { code: ErrorCode.InvalidRequest, message: `Unknown method: ${method}` }
       });
     } catch (err) {
       console.error('[GHL MCP HTTP] /mcp unhandled error:', err);
-      res.status(500).json({
+      res.json({
+        jsonrpc: '2.0',
+        id: id,
         error: { code: ErrorCode.InternalError, message: 'Internal server error' }
       });
     }
