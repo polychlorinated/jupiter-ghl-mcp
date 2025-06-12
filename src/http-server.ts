@@ -352,45 +352,53 @@ class GHLMCPHttpServer {
       }
     });
 
-    // SSE endpoint for ChatGPT MCP connection
-    const handleSSE = async (
-      req: express.Request,
-      res: express.Response
-    ): Promise<void> => {                            //  <<< explicit Promise<void>
-      const sessionId = (req.query.sessionId as string) || 'unknown';
-      console.log(`[GHL MCP HTTP] New SSE connection from: ${req.ip}, sessionId: ${sessionId}, method: ${req.method}`);
-      
-      try {
-        // Create SSE transport (this will set the headers)
-        const transport = new SSEServerTransport('/sse', res);
-        
-        // Connect MCP server to transport
-        await this.server.connect(transport);
-        
-        console.log(`[GHL MCP HTTP] SSE connection established for session: ${sessionId}`);
-        
-        // Handle client disconnect
-        req.on('close', () => {
-          console.log(`[GHL MCP HTTP] SSE connection closed for session: ${sessionId}`);
-        });
-        
-      } catch (error) {
-        console.error(`[GHL MCP HTTP] SSE connection error for session ${sessionId}:`, error);
-        
-        // Only send error response if headers haven't been sent yet
-        if (!res.headersSent) {
-          res.status(500).json({ error: 'Failed to establish SSE connection' });
-        } else {
-          // If headers were already sent, close the connection
-          res.end();
-        }
-      }
-    };
+   // SSE endpoint for ChatGPT MCP connection (manual version)
+const handleSSE = async (
+  req: express.Request,
+  res: express.Response
+): Promise<void> => {
+  const sessionId = (req.query.sessionId as string) || 'unknown';
+  console.log(`[GHL MCP HTTP] New SSE connection from: ${req.ip}, sessionId: ${sessionId}, method: ${req.method}`);
 
-    // Handle both GET and POST for SSE (MCP protocol requirements)
-    this.app.get('/sse', handleSSE);
-    this.app.post('/sse', handleSSE);
+  // Set standard SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.(); // flush headers immediately
 
+  // Send an initial handshake message
+  res.write(`data: ${JSON.stringify({ type: 'status', content: 'MCP server connected.' })}\n\n`);
+
+  // Optional: Connect your backend logic here if needed
+  if (this.server?.connect) {
+    try {
+      await this.server.connect({
+        send: (message: string) => {
+          res.write(`data: ${message}\n\n`);
+        },
+      });
+      console.log(`[GHL MCP HTTP] Connected MCP backend for session: ${sessionId}`);
+    } catch (err) {
+      console.error(`[GHL MCP HTTP] Backend connection error for session ${sessionId}:`, err);
+    }
+  }
+
+  // Keep the connection alive with a comment ping every 15 seconds
+  const keepAlive = setInterval(() => {
+    res.write(`:\n\n`);
+  }, 15000);
+
+  // Clean up when client disconnects
+  req.on('close', () => {
+    clearInterval(keepAlive);
+    console.log(`[GHL MCP HTTP] SSE connection closed for session: ${sessionId}`);
+    res.end();
+  });
+};
+
+// Handle both GET and POST for SSE (MCP protocol requirements)
+this.app.get('/sse', handleSSE);
+this.app.post('/sse', handleSSE);
   // ───────────────────────────────────────────────────────────
 //  /mcp  –  Direct HTTP endpoint for Model-Context-Protocol
 // ───────────────────────────────────────────────────────────
