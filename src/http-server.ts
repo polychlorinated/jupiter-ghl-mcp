@@ -67,6 +67,9 @@ class GHLMCPHttpServer {
   constructor() {
     this.port = parseInt(process.env.PORT || process.env.MCP_SERVER_PORT || '8080');
     
+    console.log(`[GHL MCP HTTP] Port configuration: ${process.env.PORT ? `PORT=${process.env.PORT}` : process.env.MCP_SERVER_PORT ? `MCP_SERVER_PORT=${process.env.MCP_SERVER_PORT}` : 'default=8080'}`);
+    console.log(`[GHL MCP HTTP] Server will listen on port: ${this.port}`);
+    
     // Initialize Express app
     this.app = express();
     this.setupExpress();
@@ -814,10 +817,7 @@ this.app.post(
     console.log('=========================================');
     
     try {
-      // Test GHL API connection
-      await this.testGHLConnection();
-      
-      // Start HTTP server
+      // Start HTTP server immediately (don't wait for GHL connection test)
       this.app.listen(this.port, '0.0.0.0', () => {
         console.log('✅ GoHighLevel MCP HTTP Server started successfully!');
         console.log(`🌐 Server running on: http://0.0.0.0:${this.port}`);
@@ -826,6 +826,12 @@ this.app.post(
         console.log(`📋 Tools Available: ${this.getToolsCount().total}`);
         console.log('🎯 Ready for ChatGPT integration!');
         console.log('=========================================');
+      });
+      
+      // Test GHL API connection in the background (non-blocking)
+      this.testGHLConnection().catch((error) => {
+        console.error('[GHL MCP HTTP] ⚠️ GHL API connection test failed (server still running):', error);
+        console.log('[GHL MCP HTTP] Server will continue running, but GHL API calls may fail');
       });
       
     } catch (error) {
