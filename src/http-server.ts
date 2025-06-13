@@ -62,6 +62,7 @@ class GHLMCPHttpServer {
   private surveyTools: SurveyTools;
   private storeTools: StoreTools;
   private productsTools: ProductsTools;
+  private sseTransports: Record<string, SSEServerTransport> = {};
   private port: number;
 
   constructor() {
@@ -355,39 +356,40 @@ class GHLMCPHttpServer {
       }
     });
 
- // SSE endpoint for ChatGPT MCP connection (manual version)
-const handleSSE = async (
-  req: express.Request,
-  res: express.Response
-): Promise<void> => {
-  const sessionId = (req.query.sessionId as string) || 'unknown';
-  console.log(`[GHL MCP HTTP] New SSE connection from: ${req.ip}, sessionId: ${sessionId}, method: ${req.method}`);
+    // SSE endpoints for Model Context Protocol
+    // GET /sse establishes the SSE stream; POST /sse carries JSON-RPC requests
+    this.app.get('/sse', async (req, res) => {
+      console.log(`[GHL MCP HTTP] New SSE connection from: ${req.ip}`);
+      const transport = new SSEServerTransport('/sse', res);
+      this.sseTransports[transport.sessionId] = transport;
+      transport.onclose = () => {
+        console.log(`[GHL MCP HTTP] SSE connection closed for session: ${transport.sessionId}`);
+        delete this.sseTransports[transport.sessionId];
+      };
+      try {
+        await this.server.connect(transport);
+      } catch (error) {
+        console.error('[GHL MCP HTTP] Error establishing SSE stream:', error);
+        if (!res.headersSent) {
+          res.status(500).send('Error establishing SSE stream');
+        }
+      }
+    });
 
-  // Set standard SSE headers
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('Access-Control-Allow-Origin', '*'); // optional: allow CORS if needed
-  res.flushHeaders?.(); // flush headers immediately
-
-  // Send an initial message to confirm the connection
-  res.write(`data: ${JSON.stringify({ type: 'status', content: 'MCP server connected.' })}\n\n`);
-
-  // Keep the connection alive with a comment ping every 15 seconds
-  const keepAlive = setInterval(() => {
-    res.write(`: keep-alive\n\n`);
-  }, 15000);
-
-  // Handle disconnect
-  req.on('close', () => {
-    clearInterval(keepAlive);
-    console.log(`[GHL MCP HTTP] SSE connection closed for session: ${sessionId}`);
-  });
-};
-
-// Handle both GET and POST for SSE (MCP protocol requirements)
-this.app.get('/sse', handleSSE);
-this.app.post('/sse', handleSSE);
+    this.app.post('/sse', async (req, res) => {
+      const sessionId = req.query.sessionId as string;
+      console.log(`[GHL MCP HTTP] Received SSE POST for session: ${sessionId}`);
+      const transport = this.sseTransports[sessionId];
+      if (!transport) {
+        res.status(404).send('Session not found');
+        return;
+      }
+      try {
+        await transport.handlePostMessage(req, res, req.body);
+      } catch (error) {
+        console.error('[GHL MCP HTTP] Error handling SSE POST message:', error);
+      }
+    });
   // ───────────────────────────────────────────────────────────
 //  /mcp  –  Direct HTTP endpoint for Model-Context-Protocol
 // ───────────────────────────────────────────────────────────
